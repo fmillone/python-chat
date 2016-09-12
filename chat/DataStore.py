@@ -13,4 +13,4 @@ class _DataStore:
         self.__messages = []
 
 
-DATASTORE = _DataStore()
+instance = _DataStore()

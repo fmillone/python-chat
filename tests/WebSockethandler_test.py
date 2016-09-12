@@ -1,34 +1,44 @@
 from unittest.mock import MagicMock, Mock
 
-from chat.handlers.WebSockethandler import WebSockethandler
 from hypothesis import given
 from hypothesis.strategies import text
 
-from chat.DataStore import DATASTORE
-
+from chat.Message import Message
+from chat.RoomManager import RoomManager
+from chat.handlers.WebSockethandler import WebSockethandler
 from tests.BaseHandlerTest import BaseHandlerTest
+from tests.Fixtures import MessageFixture
+from tests.utils import some
 
 
 class TestWebSockethandler(BaseHandlerTest):
-
     def setup(self):
         super().setup()
-        DATASTORE.store_message = MagicMock()
-        self.handler = WebSockethandler(self.app, self.request)
+        self.data_store = Mock()
+        self.data_store.store_message = MagicMock()
+        self.room_manager = RoomManager()
+        self.handler = WebSockethandler(
+            self.app,
+            self.request,
+            database=self.data_store,
+            room_manager=self.room_manager
+        )
 
     def cleanup(self):
         self.handler.CONNECTED_CLIENTS.clear()
+        self.data_store = None
+        self.room_manager = None
         super().cleanup()
 
-
-    @given(text())
-    def test_should_store_message_and_broadcast(self, message):
+    def test_should_store_message_and_broadcast(self):
         # given
         self.setup()
+        message = MessageFixture.json_message()
+        self.room_manager.create_room('a room')
         # when
         self.handler.on_message(message)
         # then
-        DATASTORE.store_message.assert_called_with(message)
+        self.data_store.store_message.assert_called_with(some(Message))
         # cleanup
         self.cleanup()
 
@@ -81,5 +91,33 @@ class TestWebSockethandler(BaseHandlerTest):
         assert self.handler not in self.handler.CONNECTED_CLIENTS
         for client in self.handler.CONNECTED_CLIENTS:
             client.write_message.assert_called_with('disconnected')
-        #cleanup
+        # cleanup
+        self.cleanup()
+
+    @given(text())
+    def test_should_broadcast_to_all_clients_in_room(self, message):
+        # given
+        self.setup()
+        mock_client = Mock()
+        mock_client.write_message = MagicMock()
+        mock_room = self.room_manager.create_room('test_room')
+        mock_room.register(mock_client)
+        # when
+        self.handler.send_to_room('test_room', message)
+        # then
+        mock_client.write_message.assert_called_with(message)
+        # cleanup
+        self.cleanup()
+
+    @given(text())
+    def test_should_respond_an_error_if_there_is_no_room_with_that_name(self, message):
+        # given
+        self.setup()
+        self.handler.write_message = MagicMock()
+        # when
+        self.handler.send_to_room('test_room', message)
+        # then
+        self.handler.write_message.assert_called_with('There is no room named test_room.')
+
+        # cleanup
         self.cleanup()

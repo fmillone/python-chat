@@ -1,18 +1,27 @@
 from tornado.websocket import WebSocketHandler
 
-from chat.DataStore import DATASTORE
+from chat.Message import Message
+from chat.utils.errors import InvalidRoomError
 
 
 class WebSockethandler(WebSocketHandler):
     CONNECTED_CLIENTS = []
 
     def __init__(self, application, request, **kwargs):
+        self.data_store = None
+        self.room_manager = None
+        self.username = None
         super().__init__(application, request, **kwargs)
-        self.dataStore = DATASTORE
 
-    def on_message(self, message):
-        self.dataStore.store_message(message)
-        self.broadcast(message)
+    def initialize(self, database, room_manager):
+        self.data_store = database
+        self.room_manager = room_manager
+
+    def on_message(self, raw_message):
+        msg = Message.from_json(raw_message)
+        self.data_store.store_message(msg)
+
+        self.send_to_room(msg.room, msg)
 
     def open(self):
         self.CONNECTED_CLIENTS.append(self)
@@ -34,3 +43,9 @@ class WebSockethandler(WebSocketHandler):
 
     def create_leave_pkg(self):
         return 'disconnected'
+
+    def send_to_room(self, room_name, message):
+        try:
+            self.room_manager.send_message(room_name, message)
+        except InvalidRoomError as error:
+            self.write_message(str(error))

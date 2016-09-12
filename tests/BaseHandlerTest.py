@@ -6,6 +6,7 @@ class BaseHandlerTest:
         self.app = Mock()
         self.app.ui_methods = MagicMock(return_value={})
         self.request = Mock()
+        self.handler = None
 
     def cleanup(self):
         self.app = None
