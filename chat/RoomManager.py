@@ -15,7 +15,7 @@ class RoomManager:
             raise IllegalArgumentError('None is not a valid room name')
 
     def find_room(self, room_name):
-        return self.rooms[room_name] if room_name in self.rooms else None
+        return self.rooms.get(room_name, None)
 
     def send_message(self, room_name, message):
         room = self.find_room(room_name)
@@ -30,6 +30,3 @@ class RoomManager:
             room = self.create_room(room_name)
         room.register(client)
         return room
-
-
-instance = RoomManager()

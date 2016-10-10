@@ -48,6 +48,7 @@ class TestMessage:
         self.cleanup()
 
     def test_should_convert_to_json(self):
+        # TODO: find out why this test fails randomly
         # given
         self.setup('author', 'room', 'content')
 

@@ -6,6 +6,7 @@ from hypothesis.strategies import text
 from chat.Message import Message
 from chat.Room import Room
 from chat.RoomManager import RoomManager
+from chat.UserManager import UserManager
 from chat.handlers.RoomHandler import RoomHandler
 from tests.BaseHandlerTest import BaseHandlerTest
 from tests.Fixtures import MessageFixture
@@ -15,27 +16,51 @@ from tests.utils import some
 class TestRoomHandler(BaseHandlerTest):
     def setup(self):
         super().setup()
-        self.data_store = MagicMock()
         self.room_manager = RoomManager()
+        self.user_manager = UserManager()
         self.handler = RoomHandler(
             self.app,
             self.request,
-            database=self.data_store,
-            room_manager=self.room_manager
+            room_manager=self.room_manager,
+            user_manager=self.user_manager,
         )
 
     def cleanup(self):
-        self.data_store = None
         self.room_manager = None
+        self.user_manager = None
         super().cleanup()
 
     def test_should_register_to_room_in_params(self):
         # given
         self.setup()
+        mock_user = self.user_manager.create_user('test_user', 'valid token')
+        self.request.headers.get_list = MagicMock(return_value=['valid token'])
+        self.user_manager.find_by_token = MagicMock(return_value=mock_user)
         # when
         self.handler.open('some_room')
         # then
         assert self.handler.room.name == 'some_room'
+        assert self.handler.user is not None
+        assert self.handler.user.username == 'test_user'
+        self.request.headers.get_list.assert_called_with('Authorization')
+        # cleanup
+        self.cleanup()
+
+    def test_should_disconnect_if_auth_fails(self):
+        # given
+        self.setup()
+        self.handler.write_message = MagicMock()
+        self.handler.close = MagicMock()
+        self.request.headers.get_list = MagicMock(return_value=None)
+        self.user_manager.find_by_token = MagicMock(return_value=None)
+        # when
+        self.handler.open('some_room')
+        # then
+        assert self.handler.room is None
+        assert self.handler.user is None
+        self.request.headers.get_list.assert_called_with('Authorization')
+        self.handler.close.assert_called_with()
+        self.handler.write_message.assert_called_with(' 401 : unauthorized')
         # cleanup
         self.cleanup()
 
@@ -83,7 +108,33 @@ class TestRoomHandler(BaseHandlerTest):
         # when
         self.handler.on_message(message)
         # then
-        self.data_store.store_message.assert_called_with(some(Message))
         self.handler.room.send_message.assert_called_with(some(Message))
         # cleanup
         self.cleanup()
+
+    def test_should_disconnect(self):
+        # given
+        self.setup()
+        self.handler.write_message = MagicMock()
+        self.handler.close = MagicMock()
+        # when
+        self.handler.disconnect('some message')
+        # then
+        self.handler.close.assert_called_with()
+        self.handler.write_message.assert_called_with('some message')
+        # cleanup
+        self.cleanup()
+
+    def test_should_disconnect_if_user_does_not_exist(self):
+            # given
+            self.setup()
+            self.handler.write_message = MagicMock()
+            self.handler.close = MagicMock()
+            self.handler.user = None
+            # when
+            self.handler.register_to_room('fake room')
+            # then
+            self.handler.close.assert_called_with()
+            self.handler.write_message.assert_called_with(' 401 : unauthorized invalid token')
+            # cleanup
+            self.cleanup()
